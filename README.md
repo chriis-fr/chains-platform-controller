@@ -133,6 +133,24 @@ Send `/status` to the bot. If it answers, it works.
 **`apps.json` is gitignored and must stay that way.** It holds the bot token, the chat id
 and the webhook secret. There are no credentials anywhere else in this repo.
 
+## Updating
+
+```bash
+cd /opt/chains/platform/controller
+git pull --ff-only
+sudo systemctl restart chains-controller
+```
+
+**Check `/healthz` returns `running: []` first.** systemd's default `KillMode` is
+`control-group`, so a restart kills the controller *and everything it started* — a
+`docker build`, a `deploy.sh`, a `pm2 restart` — partway through. The Docker path fails
+safe, since the colour swap only happens after the health check passes and live traffic is
+untouched until then. The pm2 path is a real risk: `deploy.sh` killed between `git merge`
+and `pm2 restart` leaves new code on disk and old code serving, which is exactly the drift
+`/status` exists to catch. Restart between deploys, not during one.
+
+`npm ci` is only needed when `package-lock.json` moved.
+
 ## Configuration
 
 Two environment variables, both with defaults:
