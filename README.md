@@ -6,7 +6,7 @@ It deploys apps from GitHub on push, reports what happened, and lets you check s
 deploy, roll back and read errors from a phone. Roughly the parts of Vercel or Railway
 that matter when everything runs on one machine you own.
 
-It is about 830 lines of TypeScript with one runtime dependency. It is not a platform —
+It is about 870 lines of TypeScript with one runtime dependency. It is not a platform —
 it is the smallest thing that removes "SSH in and hope you remember the steps".
 
 ## What it does
@@ -15,8 +15,7 @@ it is the smallest thing that removes "SSH in and hope you remember the steps".
 git push ──► GitHub webhook ──► controller ──► build, swap, health-check ──► Telegram
                                      │
 Telegram /status ────────────────────┤
-Telegram /errors ────────────────────┤
-Telegram /logs ──────────────────────┘
+Telegram /errors ────────────────────┘
 ```
 
 **Two kinds of app**, because one deploy model does not fit both:
@@ -26,7 +25,7 @@ Telegram /logs ─────────────────────�
 | strategy | blue/green | single instance |
 | downtime | none | a restart |
 | resource limits | `--cpus`, `--memory` | whatever pm2 gives it |
-| rollback | retag the previous image | `git checkout HEAD~1` + restart |
+| rollback | start the previous image again | `git checkout HEAD~1` + restart |
 | deploy | build, start the other colour, health-check, retire the old | run the repo's own `deploy.sh` |
 
 The distinction is not cosmetic, and it is the main thing this repo gets right.
@@ -46,11 +45,30 @@ seconds of downtime and it cannot double-send anything.
 |---|---|
 | `/status` | every app, its live commit, and buttons to deploy or roll back |
 | `/errors` | recent real problems per app — repeats collapsed, newest first |
-| `/logs` | a live tail that refreshes for a bounded window, with a Stop button |
 | `/help` | the list |
 
-Only the configured `chatId` is answered. Every destructive action asks for confirmation
-with an inline button first.
+`/status` also carries inline buttons: deploy, roll back, errors, refresh. Messages from
+any chat other than the configured `chatId` are dropped without a reply, and deploy and
+rollback both ask "are you sure?" and wait for a second tap.
+
+`/errors` is a filtered digest, not a tail. An app that logs one JSON line per request
+produces a log that is almost entirely 200s, where a tail shows you volume and hides the
+fault. This keeps only the lines that are a problem, collapses repeats, and puts the
+newest first — so one fault that fired four hundred times is one entry, not four hundred.
+
+### From a shell, when the bot is the thing that's down
+
+```bash
+npm run cli -- status            # every app, or one by name
+npm run cli -- deploy  <app>
+npm run cli -- rollback <app>
+npm run cli -- logs    <app>     # docker logs -f, or pm2 logs
+npm run cli -- apps
+```
+
+Same dispatch on `kind` as the webhook and the buttons — a CLI deploy of a pm2 app runs
+its `deploy.sh`, not a blue/green swap. The overlap guard is in-process, so this cannot
+see a deploy the service is already running; prefer Telegram while the service is up.
 
 ### /status reports what is RUNNING, not what was deployed
 
@@ -103,8 +121,12 @@ $EDITOR /etc/systemd/system/chains-controller.service    # user, paths
 sudo systemctl enable --now chains-controller
 ```
 
-Then point a GitHub webhook at `http://your-host:9600/webhook` (behind your proxy, or
-tunnelled) with the `webhookSecret` from `apps.json` as the secret.
+The controller listens on `127.0.0.1:9600` only, so GitHub cannot reach it directly. Give
+it a route through the proxy that already fronts your apps — a host or path rule to
+`127.0.0.1:9600` — and point the webhook at that public URL with `webhookSecret` from
+`apps.json` as the secret. The payload is verified with HMAC-SHA256 against that secret
+and a wrong signature gets a 401, so the endpoint is safe to expose; binding to loopback
+just means TLS is the proxy's job rather than this process's.
 
 Send `/status` to the bot. If it answers, it works.
 
@@ -130,7 +152,7 @@ Per app in `apps.json`:
 | `branch` | both | pushes to any other branch are ignored |
 | `domain` | both | the Traefik host rule, for Docker apps |
 | `appPort` | both | the port the app listens on |
-| `healthPath` | both | polled after a deploy; `/health` should return `commit` |
+| `healthPath` | both | pm2: polled after a deploy, and should return `commit`. docker: passed to the build as `HEALTH_PATH`, for your Dockerfile's `HEALTHCHECK` |
 | `cpus`, `memoryMb` | docker | container limits. Set them — an unlimited container will take the box down with it |
 | `repoDir` | pm2 | the checkout. Defaults to `$CHAINS_REPO_ROOT/<name>` |
 | `pm2Name` | pm2 | process name, when it differs from `name` |
@@ -141,6 +163,41 @@ happens in between is the repo's business. A script worth copying refuses to run
 dirty tree, fast-forwards rather than resetting, type-checks before it restarts anything,
 and polls `/health` until the commit served matches the commit deployed — so it cannot
 report success for a restart that silently didn't take.
+
+### The Docker path expects a specific setup
+
+Read this before pointing a `kind: "docker"` app at it, because the deployer is not
+generic — it was written for Next.js apps on one box, and it shows.
+
+It runs `npm run build` with `BUILD_STANDALONE=true`, then assembles the image context
+from `.next/standalone`, `.next/static` and `public/`. A Next.js app with standalone
+output builds as-is. **Anything else needs `deploy()` in `deployer.ts` changed**, which is
+about twenty lines.
+
+The on-disk layout is hardcoded at the top of `deployer.ts`:
+
+```
+/opt/chains/apps/<name>/repo/        the checkout — git reset --hard origin/<branch>
+/opt/chains/apps/<name>/Dockerfile   yours, built with PORT and HEALTH_PATH build args
+/opt/chains/apps/<name>/.env         passed to the container with --env-file
+/opt/chains/data/deploys/<name>.json which colour is live, and the previous sha
+```
+
+Three things that will cost you an afternoon if nobody says them:
+
+- **Your Dockerfile must declare a `HEALTHCHECK`.** The deployer gates the swap on
+  `docker inspect .State.Health.Status`, so a container with no healthcheck never reports
+  `healthy`, and every deploy waits 60 seconds and then aborts with traffic untouched.
+  `healthPath` is handed to the build as `HEALTH_PATH` for the Dockerfile to use.
+- **Containers join a network called `chains-edge`** and are labelled for Traefik on an
+  entrypoint called `web`. Create the network, or change the two constants.
+- **The checkout is `git reset --hard`.** Anything edited directly on the server inside
+  `repo/` is gone on the next deploy. That is deliberate — but it is the opposite of what
+  the pm2 path does, which refuses to deploy a dirty tree rather than flattening it.
+
+Rollback reuses the image built for the previous commit rather than rebuilding it, so it
+takes seconds. The last 5 image tags per app are kept and older ones pruned; roll back
+further than that and the image is gone.
 
 ## Layout
 
@@ -155,8 +212,14 @@ src/
   monitor.ts       watches `docker events` for containers dying unexpectedly
   notify.ts        Telegram sending
   state.ts         what is running or queued, in memory
-  cli.ts           the same actions from a shell
+  cli.ts           the same actions from a shell, dispatching on the same kind
 ```
+
+`monitor.ts` is worth a line: it alerts on containers that die, but a blue/green swap
+*intentionally* kills a container every deploy. So the deployer marks a removal as
+expected before it happens, and the monitor stays quiet for it — otherwise every
+successful deploy would page you. Alerts are also capped at one per container per minute,
+since a crash-looping container restarts faster than you can read about it.
 
 No build step. `tsx` runs the TypeScript, and the only dependency is `express`.
 
@@ -165,14 +228,22 @@ No build step. `tsx` runs the TypeScript, and the only dependency is `express`.
 Worth being plain about, because the gaps are deliberate:
 
 - **One box.** No orchestration, no multiple hosts, no scheduling.
-- **No secret management.** Your app's `.env` is your business; this never reads it.
+- **Not a generic builder.** The Docker path builds Next.js standalone output and assumes
+  the directory layout above. Other stacks need `deployer.ts` edited.
+- **No secret management.** For a Docker app it reads `/opt/chains/apps/<name>/.env` and
+  hands it to the build and to the container with `--env-file`, so keep that file at
+  `600`. It never generates, encrypts, rotates or versions anything in it, and never puts
+  a value from it in a Telegram message. For a pm2 app it does not touch env at all.
 - **No TLS.** The controller binds `127.0.0.1`. Put a proxy in front.
 - **No database migrations.** A `deploy.sh` can run them; the controller will not.
 - **No multi-user auth.** One Telegram chat id is trusted. There are no roles.
 - **In-memory state.** Restart it mid-deploy and it forgets a deploy was running. The
   deploy itself continues; the controller just stops narrating it.
-- **`/logs` is polled, not streamed.** Telegram cannot stream, so it edits one message on
-  a timer for a bounded window. It reads like a tail; it is not one.
+- **No live log tailing.** Telegram has no streaming transport, so following a log means
+  editing one message on a timer. `/errors` gives you a digest on demand instead; for a
+  real tail you still SSH.
+- **No metrics.** No request rates, no latency, no graphs. `/status` answers "is it up and
+  what is it serving"; it does not answer "how is it doing".
 
 ## Why it exists
 
