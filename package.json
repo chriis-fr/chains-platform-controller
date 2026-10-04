@@ -1,0 +1,22 @@
+{
+  "name": "chains-platform-controller",
+  "version": "1.0.0",
+  "description": "Telegram-driven deploy controller for a single VPS: blue/green for Docker apps, single-instance for pm2 apps, with status, errors and rollback from a phone.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "cli": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.10",
+    "typescript": "^7.0.2"
+  }
+}

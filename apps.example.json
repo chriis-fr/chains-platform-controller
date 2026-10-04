@@ -1,0 +1,32 @@
+{
+  "webhookSecret": "generate-with-openssl-rand-hex-32",
+  "telegram": {
+    "botToken": "from @BotFather",
+    "chatId": 0
+  },
+  "apps": [
+    {
+      "name": "pos",
+      "kind": "docker",
+      "repo": "your-org/your-pos-repo",
+      "branch": "main",
+      "domain": "pos.example.com",
+      "appPort": 3000,
+      "healthPath": "/api/health",
+      "cpus": 2,
+      "memoryMb": 3072
+    },
+    {
+      "name": "api",
+      "kind": "pm2",
+      "repo": "your-org/your-api-repo",
+      "branch": "production",
+      "domain": "api.example.com",
+      "appPort": 4000,
+      "healthPath": "/health",
+      "repoDir": "/home/youruser/your-api-repo",
+      "pm2Name": "your-api",
+      "deployScript": "./deploy.sh"
+    }
+  ]
+}

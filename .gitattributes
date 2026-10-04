@@ -1,0 +1,4 @@
+# This is checked out and run on Linux. Keep LF in the repo regardless of the
+# platform it was committed from, so a shell script committed from Windows does
+# not arrive on the server with CRLF and fail at the shebang.
+* text=auto eol=lf

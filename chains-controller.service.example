@@ -1,0 +1,19 @@
+# /etc/systemd/system/chains-controller.service
+[Unit]
+Description=Chains platform controller
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+User=youruser
+WorkingDirectory=/opt/chains/platform/controller
+# tsx runs the TypeScript directly — there is no build step.
+ExecStart=/usr/bin/npx tsx src/server.ts
+Environment=CHAINS_CONFIG=/opt/chains/platform/apps.json
+# Where pm2-kind repos live, when apps.json does not say per app.
+Environment=CHAINS_REPO_ROOT=/home/youruser
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

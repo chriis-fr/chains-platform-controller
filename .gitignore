@@ -1,0 +1,9 @@
+# apps.json holds the Telegram bot token, the chat id and the webhook secret.
+# Never commit it. apps.example.json is the template.
+apps.json
+*.local.json
+
+node_modules/
+dist/
+*.log
+.DS_Store
