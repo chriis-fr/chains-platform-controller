@@ -40,9 +40,15 @@ const repoRoot = () => process.env.CHAINS_REPO_ROOT ?? process.env.HOME ?? '/srv
 const repoDir = (app: AppConfig) => app.repoDir ?? `${repoRoot()}/${app.name}`;
 const pm2Name = (app: AppConfig) => app.pm2Name ?? app.name;
 
-function shOut(cmd: string, args: string[], cwd?: string, timeoutMs = 20_000): Promise<string> {
+function shOut(
+  cmd: string,
+  args: string[],
+  cwd?: string,
+  timeoutMs = 20_000,
+  env?: Record<string, string>,
+): Promise<string> {
   return new Promise((resolve) => {
-    const p = spawn(cmd, args, { cwd });
+    const p = spawn(cmd, args, { cwd, env: env ? { ...process.env, ...env } : process.env });
     let out = '';
     const t = setTimeout(() => { try { p.kill('SIGKILL'); } catch { /* gone */ } }, timeoutMs);
     p.stdout.on('data', (d) => (out += d));
@@ -114,7 +120,17 @@ export async function deployPm2(app: AppConfig): Promise<void> {
 
   await notify(`🚀 <b>${app.name}</b> — deploying via <code>${script}</code>…`);
 
-  const out = await shOut('bash', [script], dir, 10 * 60_000);
+  /*
+   * CHAINS_DEPLOY_VIA_CONTROLLER tells the script to keep quiet on Telegram.
+   *
+   * A repo's deploy.sh now announces its own deploys, because most of them are run by a
+   * person over SSH and used to happen in silence. When the controller is the one
+   * running it, the controller has already posted "deploying…" and will post the
+   * outcome — so without this flag every button press would report itself twice.
+   */
+  const out = await shOut('bash', [script], dir, 10 * 60_000, {
+    CHAINS_DEPLOY_VIA_CONTROLLER: '1',
+  });
   const after = await pm2Health(app);
   const disk = await pm2DiskCommit(app);
 
