@@ -5,6 +5,8 @@ import { runDeploy } from './orchestrator.js';
 import { running } from './state.js';
 import { startTelegram } from './telegram.js';
 import { startMonitor } from './monitor.js';
+import { notify } from './notify.js';
+import { verifyFleetopsSignature, formatFleetopsEvent, DEFAULT_EVENTS } from './fleetops.js';
 
 const app = express();
 app.use(express.json({ verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
@@ -36,6 +38,22 @@ app.post('/webhook', (req: any, res) => {
 
   res.json({ deploying: appCfg.name, commit: req.body?.after });
   void runDeploy(appCfg.name);
+});
+
+// Chains FleetOps (Fleetbase) webhooks → Telegram. Point a FleetOps webhook endpoint at
+// https://deploy.chains-erp.com/fleetops/webhook and put its signing secret in apps.json (fleetops.webhookSecret).
+app.post('/fleetops/webhook', (req: any, res) => {
+  const f = loadConfig().fleetops;
+  if (!f?.webhookSecret) { res.status(503).json({ error: 'fleetops webhook not configured' }); return; }
+  if (!verifyFleetopsSignature(req.rawBody ?? Buffer.alloc(0), req.header('x-fleetbase-signature'), f.webhookSecret)) {
+    res.status(401).json({ error: 'bad signature' });
+    return;
+  }
+  const event: string = req.body?.event ?? '';
+  res.json({ received: event });
+  if (!(f.events ?? DEFAULT_EVENTS).includes(event)) return;
+  const text = formatFleetopsEvent(req.body, f.consoleUrl);
+  if (text) void notify(text);
 });
 
 const port = Number(process.env.PORT ?? 9600);

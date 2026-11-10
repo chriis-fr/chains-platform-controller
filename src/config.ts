@@ -25,10 +25,26 @@ export interface AppConfig {
 }
 
 export const appKind = (a: AppConfig): AppKind => a.kind ?? "docker";
-export interface TelegramConfig { botToken: string; chatId: number; }
+export interface TelegramConfig {
+  botToken: string; chatId: number;
+  /** Optional relay for networks that block api.telegram.org, e.g. https://chains-erp.com/api/tg */
+  relayUrl?: string;
+}
+/** Chains FleetOps (Fleetbase). All optional except the two URLs. */
+export interface FleetOpsConfig {
+  apiUrl: string;        // https://api.progressusmavericks.co.ke
+  consoleUrl: string;    // https://progressusmavericks.co.ke
+  /** Signing secret of the FleetOps webhook endpoint that points at /fleetops/webhook. */
+  webhookSecret?: string;
+  /** Read-only use: order counts in /fleet. */
+  apiKey?: string;
+  /** Events to post to Telegram; defaults to the order lifecycle. */
+  events?: string[];
+}
 export interface PlatformConfig {
   webhookSecret: string;
   telegram?: TelegramConfig;
+  fleetops?: FleetOpsConfig;
   apps: AppConfig[];
 }
 

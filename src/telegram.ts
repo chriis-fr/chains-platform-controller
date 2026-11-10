@@ -4,11 +4,16 @@ import { loadState } from './deployer.js';
 import { runDeploy, runRollback } from './orchestrator.js';
 import { running } from './state.js';
 import { escapeHtml } from './notify.js';
+import { tgCall, pollSeconds } from './tgapi.js';
+import { fleetStatusText } from './fleetops.js';
 
 const api = (tg: TelegramConfig, method: string, body: unknown) =>
-  fetch(`https://api.telegram.org/bot${tg.botToken}/${method}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-  }).then((r) => r.json()).catch(() => null);
+  tgCall(tg, method, body).catch((e) => { console.error(`telegram ${method} failed:`, (e as Error).message); return null; });
+
+async function fleetText(): Promise<string> {
+  const f = loadConfig().fleetops;
+  return f ? fleetStatusText(f) : '🚚 FleetOps is not set up — add a <code>fleetops</code> block to apps.json.';
+}
 
 type Keyboard = { text: string; callback_data: string }[][];
 
@@ -93,13 +98,14 @@ function statusKeyboard(): Keyboard {
   ]));
   rows.push([
     { text: '🩺 Errors', callback_data: 'errors' },
+    { text: '🚚 FleetOps', callback_data: 'fleet' },
     { text: '🔄 Refresh', callback_data: 'refresh' },
   ]);
   return rows;
 }
 
 const HELP =
-  '<b>Chains Platform</b>\n/status — apps, live commits, action buttons\n/errors — recent problems from every app log\n/help — this message\n\nDeploys also trigger automatically on git push.';
+  '<b>Chains Platform</b>\n/status — apps, live commits, action buttons\n/errors — recent problems from every app log\n/fleet — Chains FleetOps (logistics) health and orders\n/help — this message\n\nDeploys also trigger automatically on git push.';
 
 async function handleUpdate(tg: TelegramConfig, u: any): Promise<void> {
   const msg = u.message;
@@ -111,6 +117,10 @@ async function handleUpdate(tg: TelegramConfig, u: any): Promise<void> {
     } else if (text === '/errors') {
       await api(tg, 'sendMessage', {
         chat_id: tg.chatId, text: await errorsText(), parse_mode: 'HTML', disable_web_page_preview: true,
+      });
+    } else if (text === '/fleet') {
+      await api(tg, 'sendMessage', {
+        chat_id: tg.chatId, text: await fleetText(), parse_mode: 'HTML', disable_web_page_preview: true,
       });
     } else if (text === '/status') {
       await api(tg, 'sendMessage', {
@@ -136,6 +146,12 @@ async function handleUpdate(tg: TelegramConfig, u: any): Promise<void> {
     await ack('Reading logs…');
     await api(tg, 'sendMessage', {
       chat_id: tg.chatId, text: await errorsText(), parse_mode: 'HTML', disable_web_page_preview: true,
+    });
+
+  } else if (data === 'fleet') {
+    await ack('Checking FleetOps…');
+    await api(tg, 'sendMessage', {
+      chat_id: tg.chatId, text: await fleetText(), parse_mode: 'HTML', disable_web_page_preview: true,
     });
 
   } else if (data === 'refresh') {
@@ -174,18 +190,24 @@ async function handleUpdate(tg: TelegramConfig, u: any): Promise<void> {
 export function startTelegram(): void {
   const tg = loadConfig().telegram;
   if (!tg) { console.log('telegram: not configured, skipping'); return; }
-  console.log('telegram: polling started');
+  console.log(`telegram: polling started${tg.relayUrl ? ` via relay ${tg.relayUrl}` : ''}`);
   void (async () => {
     let offset = 0;
     for (;;) {
       try {
-        const res = await fetch(`https://api.telegram.org/bot${tg.botToken}/getUpdates?timeout=50&offset=${offset}`);
-        const data: any = await res.json();
+        const wait = pollSeconds(tg);
+        const data: any = await tgCall(tg, 'getUpdates', { timeout: wait, offset }, (wait + 15) * 1000);
+        if (data && data.ok === false) {
+          console.error('telegram getUpdates refused:', data.description);
+          await new Promise((r) => setTimeout(r, 5000));
+          continue;
+        }
         for (const u of data?.result ?? []) {
           offset = u.update_id + 1;
           await handleUpdate(tg, u).catch((e) => console.error('telegram handler:', (e as Error).message));
         }
-      } catch {
+      } catch (e) {
+        console.error('telegram poll failed:', (e as Error).message);
         await new Promise((r) => setTimeout(r, 3000));
       }
     }
