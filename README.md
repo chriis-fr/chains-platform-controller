@@ -139,6 +139,11 @@ With `telegram.webhookUrl` and `telegram.webhookSecret` set, the controller regi
 webhook at start-up and Telegram posts each update to `/telegram/webhook`. Nothing is held
 open anywhere. Without them it long-polls `getUpdates`, as before.
 
+With `relayUrl` set, the controller still calls Telegram directly first. Only when that fails
+(Kenyan networks block Telegram during the national exams each November) does it use the
+relay, and it retries direct every five minutes, so it goes back to calling Telegram itself
+as soon as the block lifts. The relay is a fallback, not the route.
+
 Use the webhook whenever `relayUrl` points at a serverless relay. A long-poll through a
 serverless function is billed for every second it waits: on Vercel the 25-second polls ran
 the function around the clock, about 40 GB-hours a day. The relay in the app refuses
