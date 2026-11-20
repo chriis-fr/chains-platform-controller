@@ -3,7 +3,7 @@
   "telegram": {
     "botToken": "from @BotFather",
     "chatId": 0,
-    "relayUrl": "https://app.example.com/api/tg",
+    "relayUrl": "https://chains-tg-relay.your-account.workers.dev",
     "webhookUrl": "https://deploy.example.com/telegram/webhook",
     "webhookSecret": "generate-with-openssl-rand-hex-24"
   },
