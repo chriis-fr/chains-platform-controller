@@ -141,7 +141,10 @@ export async function deploy(app: AppConfig): Promise<void> {
     const ctx = path.join(appDir, 'context');
     rmSync(ctx, { recursive: true, force: true });
     mkdirSync(path.join(ctx, '.next'), { recursive: true });
-    cpSync(path.join(repoDir, '.next/standalone'), ctx, { recursive: true });
+    // verbatimSymlinks keeps Turbopack's relative links in .next/node_modules (e.g.
+    // styled-components-<hash> -> ../../node_modules/styled-components) relative. Without it
+    // cpSync rewrites them to absolute host paths that do not exist inside the container.
+    cpSync(path.join(repoDir, '.next/standalone'), ctx, { recursive: true, verbatimSymlinks: true });
     cpSync(path.join(repoDir, '.next/static'), path.join(ctx, '.next/static'), { recursive: true });
     if (existsSync(path.join(repoDir, 'public'))) {
       cpSync(path.join(repoDir, 'public'), path.join(ctx, 'public'), { recursive: true });
