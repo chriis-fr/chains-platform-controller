@@ -3,7 +3,7 @@ import express from 'express';
 import { loadConfig, findAppByRepo } from './config.js';
 import { runDeploy } from './orchestrator.js';
 import { running } from './state.js';
-import { startTelegram } from './telegram.js';
+import { startTelegram, handleWebhookUpdate } from './telegram.js';
 import { startMonitor } from './monitor.js';
 import { notify } from './notify.js';
 import { verifyFleetopsSignature, formatFleetopsEvent, DEFAULT_EVENTS } from './fleetops.js';
@@ -19,6 +19,21 @@ function verifySignature(secret: string, raw: Buffer, sig?: string): boolean {
 }
 
 app.get('/healthz', (_req, res) => { res.json({ ok: true, running: [...running] }); });
+
+// Telegram updates (button taps, commands), when telegram.webhookUrl is set in apps.json.
+// Telegram signs each call with the secret given to setWebhook.
+app.post('/telegram/webhook', (req: any, res) => {
+  const tg = loadConfig().telegram;
+  const got = Buffer.from(String(req.header('x-telegram-bot-api-secret-token') ?? ''));
+  const want = Buffer.from(tg?.webhookSecret ?? '');
+  if (!tg?.webhookUrl || !want.length || got.length !== want.length || !timingSafeEqual(got, want)) {
+    res.status(401).json({ error: 'bad secret' });
+    return;
+  }
+  // Answer at once: Telegram retries a slow webhook, and a deploy takes minutes.
+  res.json({ ok: true });
+  void handleWebhookUpdate(req.body);
+});
 
 app.post('/webhook', (req: any, res) => {
   const cfg = loadConfig();

@@ -133,6 +133,25 @@ Send `/status` to the bot. If it answers, it works.
 **`apps.json` is gitignored and must stay that way.** It holds the bot token, the chat id
 and the webhook secret. There are no credentials anywhere else in this repo.
 
+## Telegram: webhook, not long-polling
+
+With `telegram.webhookUrl` and `telegram.webhookSecret` set, the controller registers a
+webhook at start-up and Telegram posts each update to `/telegram/webhook`. Nothing is held
+open anywhere. Without them it long-polls `getUpdates`, as before.
+
+Use the webhook whenever `relayUrl` points at a serverless relay. A long-poll through a
+serverless function is billed for every second it waits: on Vercel the 25-second polls ran
+the function around the clock, about 40 GB-hours a day. The relay in the app refuses
+`getUpdates` for that reason.
+
+`webhookUrl` is this controller's public `/telegram/webhook`, behind the same proxy as
+`/webhook`. `webhookSecret` is 16 or more letters, digits, `_` or `-` (`openssl rand -hex 24`).
+
+## Several hosts for one app
+
+`domain` may list hosts separated by commas, `"chains-erp.com,www.chains-erp.com"`. The
+Traefik rule matches any of them; links in messages use the first.
+
 ## Updating
 
 ```bash

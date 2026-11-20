@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { loadConfig, appKind, type AppConfig } from './config.js';
+import { loadConfig, appKind, type AppConfig, primaryHost } from './config.js';
 import { loadState } from './deployer.js';
 import { runDeploy, runRollback } from './orchestrator.js';
 import { pm2Health, pm2DiskCommit, pm2Uptime } from './pm2app.js';
@@ -36,13 +36,13 @@ async function printStatus(app: AppConfig): Promise<void> {
     const drift = h.commit && disk && h.commit !== disk ? `  DRIFT: disk ${disk}` : '';
     console.log(
       `${app.name} (pm2): ${state} serving ${h.commit ?? '?'}` +
-      `${up ? ` since ${up} ago` : ''}${drift}  https://${app.domain}`,
+      `${up ? ` since ${up} ago` : ''}${drift}  https://${primaryHost(app)}`,
     );
     return;
   }
   const s = loadState(app.name);
   console.log(s
-    ? `${app.name}: ${s.sha.slice(0, 7)} on ${s.active} since ${s.at}${s.prevSha ? ` (rollback → ${s.prevSha.slice(0, 7)})` : ''}  https://${app.domain}`
+    ? `${app.name}: ${s.sha.slice(0, 7)} on ${s.active} since ${s.at}${s.prevSha ? ` (rollback → ${s.prevSha.slice(0, 7)})` : ''}  https://${primaryHost(app)}`
     : `${app.name}: never deployed`);
 }
 

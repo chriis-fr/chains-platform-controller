@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { AppConfig } from './config.js';
+import { primaryHost } from './config.js';
 import { notify, escapeHtml } from './notify.js';
 
 /**
@@ -142,7 +143,7 @@ export async function deployPm2(app: AppConfig): Promise<void> {
     await notify(
       `✅ <b>${app.name}</b> deployed\n` +
       `   ├ serving <code>${after.commit}</code>${before && before !== after.commit ? ` (was <code>${before}</code>)` : ''}\n` +
-      `   └ https://${app.domain}`,
+      `   └ https://${primaryHost(app)}`,
     );
     return;
   }

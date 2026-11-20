@@ -187,11 +187,45 @@ async function handleUpdate(tg: TelegramConfig, u: any): Promise<void> {
   }
 }
 
+/** One update delivered by the webhook. Errors are logged, never thrown at Telegram. */
+export async function handleWebhookUpdate(u: unknown): Promise<void> {
+  const tg = loadConfig().telegram;
+  if (!tg) return;
+  await handleUpdate(tg, u).catch((e) => console.error('telegram handler:', (e as Error).message));
+}
+
 export function startTelegram(): void {
   const tg = loadConfig().telegram;
   if (!tg) { console.log('telegram: not configured, skipping'); return; }
+
+  if (tg.webhookUrl) {
+    // Telegram pushes each update to /telegram/webhook: nothing is held open anywhere.
+    if (!tg.webhookSecret || !/^[A-Za-z0-9_-]{16,256}$/.test(tg.webhookSecret)) {
+      console.error('telegram: webhookUrl needs a webhookSecret of 16+ letters, digits, _ or -; not starting');
+      return;
+    }
+    void (async () => {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          const r: any = await tgCall(tg, 'setWebhook', {
+            url: tg.webhookUrl, secret_token: tg.webhookSecret,
+            allowed_updates: ['message', 'callback_query'],
+          });
+          if (r?.ok) { console.log(`telegram: webhook set to ${tg.webhookUrl}${tg.relayUrl ? ` via relay ${tg.relayUrl}` : ''}`); return; }
+          console.error('telegram setWebhook refused:', r?.description);
+        } catch (e) {
+          console.error('telegram setWebhook failed:', (e as Error).message);
+        }
+        await new Promise((r) => setTimeout(r, Math.min(60_000, 5000 * attempt)));
+      }
+    })();
+    return;
+  }
+
   console.log(`telegram: polling started${tg.relayUrl ? ` via relay ${tg.relayUrl}` : ''}`);
   void (async () => {
+    // getUpdates is refused while a webhook is set, so clear any left from webhook mode.
+    await tgCall(tg, 'deleteWebhook', {}).catch(() => {});
     let offset = 0;
     for (;;) {
       try {

@@ -25,10 +25,21 @@ export interface AppConfig {
 }
 
 export const appKind = (a: AppConfig): AppKind => a.kind ?? "docker";
+/** The first host in `domain`, which may list several, comma-separated. */
+export const primaryHost = (a: AppConfig): string => a.domain.split(",")[0].trim();
 export interface TelegramConfig {
   botToken: string; chatId: number;
-  /** Optional relay for networks that block api.telegram.org, e.g. https://chains-erp.com/api/tg */
+  /** Optional relay for networks that block api.telegram.org, e.g. https://app.chains-erp.com/api/tg */
   relayUrl?: string;
+  /**
+   * Receive updates by webhook instead of long-polling getUpdates: the public URL of this
+   * controller's /telegram/webhook, e.g. https://deploy.chains-erp.com/telegram/webhook.
+   * Use it whenever relayUrl points at a serverless relay: a long-poll held open there is billed
+   * for every second it waits.
+   */
+  webhookUrl?: string;
+  /** Required with webhookUrl: Telegram sends it back in X-Telegram-Bot-Api-Secret-Token. A-Z a-z 0-9 _ - only. */
+  webhookSecret?: string;
 }
 /** Chains FleetOps (Fleetbase). All optional except the two URLs. */
 export interface FleetOpsConfig {

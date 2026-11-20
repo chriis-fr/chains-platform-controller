@@ -2,7 +2,10 @@
   "webhookSecret": "generate-with-openssl-rand-hex-32",
   "telegram": {
     "botToken": "from @BotFather",
-    "chatId": 0
+    "chatId": 0,
+    "relayUrl": "https://app.example.com/api/tg",
+    "webhookUrl": "https://deploy.example.com/telegram/webhook",
+    "webhookSecret": "generate-with-openssl-rand-hex-24"
   },
   "apps": [
     {

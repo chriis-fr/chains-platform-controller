@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, cpSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { AppConfig } from './config.js';
+import { primaryHost } from './config.js';
 import { notify, escapeHtml } from './notify.js';
 import { expectRemoval } from './state.js';
 
@@ -65,7 +66,8 @@ async function release(app: AppConfig, image: string, sha: string, kind: 'deploy
     '--network', 'chains-edge',
     '--cpus', String(app.cpus ?? 1), '--memory', `${app.memoryMb ?? 1024}m`,
     '--label', 'traefik.enable=true',
-    '--label', 'traefik.http.routers.' + app.name + '.rule=Host(`' + app.domain + '`)',
+    // domain may list several hosts, comma-separated: "chains-erp.com,www.chains-erp.com".
+    '--label', `traefik.http.routers.${app.name}.rule=` + app.domain.split(',').map((h) => 'Host(`' + h.trim() + '`)').join(' || '),
     '--label', `traefik.http.routers.${app.name}.entrypoints=web`,
     '--label', `traefik.http.services.${app.name}.loadbalancer.server.port=${app.appPort}`];
   if (existsSync(envPath)) args.push('--env-file', envPath);
@@ -154,7 +156,7 @@ export async function deploy(app: AppConfig): Promise<void> {
     await pruneImages(app.name);
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     log(app.name, `LIVE — ${short} on ${loadState(app.name)!.active} in ${secs}s`);
-    void notify(`✅ <b>${app.name}</b> — <code>${short}</code> LIVE on ${loadState(app.name)!.active} in ${secs}s\nhttps://${app.domain}`);
+    void notify(`✅ <b>${app.name}</b> — <code>${short}</code> LIVE on ${loadState(app.name)!.active} in ${secs}s\nhttps://${primaryHost(app)}`);
   } catch (e) {
     void notify(`❌ <b>${app.name}</b> — deploy FAILED\n<code>${escapeHtml((e as Error).message)}</code>\nLive traffic is untouched.`);
     throw e;
